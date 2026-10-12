@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文字地下城 - 回合制冒險</title>
+  <style>
+    :root{color-scheme:dark;--bg:#10151b;--panel:#1b242d;--border:#394754;--text:#e5edf4;--muted:#9aabb9;--accent:#7de3b0;--danger:#ff7777;--gold:#ffd479}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;padding:24px 14px 40px;background:radial-gradient(ellipse at top,#263641 0%,var(--bg) 65%);color:var(--text);font-family:Consolas,"Courier New",monospace}
+    .game{width:min(100%,760px);margin:0 auto}
+    h1{margin:0 0 8px;color:var(--accent);font-size:clamp(25px,5vw,36px);letter-spacing:2px}
+    .subtitle{margin:0 0 22px;color:var(--muted);line-height:1.7;font-family:system-ui,sans-serif;font-size:14px}
+    .panel{padding:16px;margin-bottom:14px;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px #0003}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .stat-label{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}
+    .stat-value{font-size:19px;font-weight:bold}
+    #hp{color:var(--danger)}#turn{color:var(--gold)}
+    #dungeon{display:block;width:100%;overflow-x:auto;margin:0;padding:14px 8px;background:#0c1116;border:1px solid #35434c;border-radius:8px;color:#cbd8df;font-size:clamp(12px,2.7vw,19px);line-height:1.42;letter-spacing:.02em;white-space:pre;user-select:none;-webkit-user-select:none;text-align:center}
+    .legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:14px;color:var(--muted);font-size:13px}.legend span{white-space:nowrap}
+    .player-color{color:var(--accent)}
+    .spring-color{color:#63d9ff}
+    .player-glyph{animation:rainbowPlayer 2.4s linear infinite;font-weight:900}
+    @keyframes rainbowPlayer{
+      0%{color:#ff4d6d;text-shadow:0 0 8px #ff4d6d}
+      16%{color:#ffad33;text-shadow:0 0 8px #ffad33}
+      33%{color:#fff34d;text-shadow:0 0 8px #fff34d}
+      50%{color:#52ff91;text-shadow:0 0 8px #52ff91}
+      66%{color:#45caff;text-shadow:0 0 8px #45caff}
+      83%{color:#b86bff;text-shadow:0 0 8px #b86bff}
+      100%{color:#ff4d6d;text-shadow:0 0 8px #ff4d6d}
+    }.wall-color{color:#8999a8}.enemy-color{color:var(--danger)}.exit-color{color:var(--gold)}
+    /* 主角符號持續循環彩虹色 */
+    .player-glyph{color:#ff4d4d;animation:rainbow 2.4s linear infinite;text-shadow:0 0 8px currentColor;font-weight:900}
+    @keyframes rainbow{0%{color:#ff4d4d}16%{color:#ffae42}33%{color:#fff34d}50%{color:#55ef76}66%{color:#4dd9ff}83%{color:#bd70ff}100%{color:#ff4d4d}}
+    @media(prefers-reduced-motion:reduce){.player-glyph{animation-duration:8s}}
+    #message{min-height:52px;padding:13px 15px;margin-bottom:14px;border:1px solid var(--border);border-radius:8px;background:#151d24;color:#dce7ef;font-family:system-ui,sans-serif;line-height:1.65}
+    #message.success{color:var(--accent);border-color:#438e6d}#message.error{color:var(--danger);border-color:#8d4444}
+    .controls-layout{display:grid;grid-template-columns:1fr 1fr;align-items:start;gap:20px}
+    .section-title{margin:0 0 12px;font-size:14px;color:var(--muted);font-weight:normal}
+    .dpad{display:grid;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(3,48px);justify-content:center;gap:5px}
+    button{font:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+    .direction{color:var(--text);background:#2b3945;border:1px solid #4b6070;border-radius:8px;font-size:22px;font-weight:bold}
+    .direction:hover{background:#405563}.direction:active{background:#526d7c;transform:translateY(1px)}
+    .up{grid-column:2;grid-row:1}.left{grid-column:1;grid-row:2}.down{grid-column:2;grid-row:2}.right{grid-column:3;grid-row:2}
+    .reset{width:100%;min-height:44px;padding:10px 12px;border:1px solid #4b806a;border-radius:8px;background:#234535;color:#baffd8;font-size:14px}
+    .reset:hover{background:#2f5a43}.help{color:var(--muted);font-size:12px;line-height:1.8;margin-top:12px;font-family:system-ui,sans-serif}
+    kbd{display:inline-block;padding:2px 5px;border:1px solid #50616f;border-radius:4px;background:#26333e;color:#f0f5f8;font:inherit}
+    @media(max-width:520px){body{padding:16px 10px 28px}.panel{padding:12px}.controls-layout{grid-template-columns:1fr;gap:22px}.dpad{grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,52px)}#dungeon{font-size:clamp(10px,2.8vw,14px);padding:12px 2px}}
+  </style>
+</head>
+<body>
+<main class="game">
+  <h1>文字地下城</h1>
+  <p class="subtitle">TURN-BASED DUNGEON · 探索迷宮、躲避敵人，找到出口！</p>
+  <section class="panel stats" aria-label="遊戲狀態">
+    <div><span class="stat-label">生命值 HP</span><span class="stat-value" id="hp">♥ ♥ ♥</span></div>
+    <div><span class="stat-label">行動回合</span><span class="stat-value" id="turn">0</span></div>
+    <div><span class="stat-label">剩餘敵人</span><span class="stat-value" id="enemy-count">2</span></div>
+    <div><span class="stat-label">地下層數</span><span class="stat-value" id="level">1 / 3</span></div>
+  </section>
+  <section class="panel">
+    <pre id="dungeon" role="img" aria-label="地下城文字地圖"></pre>
+    <div class="legend">
+      <span><b class="player-color">@</b> 玩家</span><span><b class="wall-color">#</b> 牆壁</span>
+      <span><b class="enemy-color">E</b> 敵人</span><span><b class="exit-color">X</b> 出口／下一層</span><span><b class="spring-color">H</b> 治療泉水</span><span><b>.</b> 地板</span>
+    </div>
+  </section>
+  <div id="message" role="status" aria-live="polite">冒險開始！使用 WASD 或方向鍵移動，抵達 X 即可獲勝。</div>
+  <section class="panel">
+    <div class="controls-layout">
+      <div>
+        <h2 class="section-title">觸控方向控制</h2>
+        <div class="dpad">
+          <button class="direction up" data-dx="0" data-dy="-1" aria-label="向上">▲</button>
+          <button class="direction left" data-dx="-1" data-dy="0" aria-label="向左">◀</button>
+          <button class="direction down" data-dx="0" data-dy="1" aria-label="向下">▼</button>
+          <button class="direction right" data-dx="1" data-dy="0" aria-label="向右">▶</button>
+        </div>
+      </div>
+      <div>
+        <h2 class="section-title">冒險操作</h2>
+        <button class="reset" id="restart">↻ 重新開始</button>
+        <div class="help">
+          移動按鍵：<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><br>
+          或使用 <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd><br>
+          每次有效移動，敵人都會行動一次。<br>踩到 H 可回滿 HP（每座泉水限用一次）。<br>撞牆不會移動，也不會消耗回合。
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const LEVEL_MAPS = [
+  // 第 1 層：入門
+  [
+    "###############",
+    "#@....#.......#",
+    "#.....#.......#",
+    "#.........H...#",
+    "###.#####.###.#",
+    "#...#.....#...#",
+    "#...#..E..#...#",
+    "#.............#",
+    "#.###..#..###.#",
+    "#............X#",
+    "###############"
+  ],
+  // 第 2 層：更多敵人與更曲折的通道
+  [
+    "###############",
+    "#@....#.......#",
+    "#.##..#..###..#",
+    "#.....#....H..#",
+    "###.####.###..#",
+    "#...E....#....#",
+    "#.####...#.##.#",
+    "#......E......#",
+    "#.###.#####.#.#",
+    "#H..........X.#",
+    "###############"
+  ],
+  // 第 3 層：高難度
+  [
+    "###############",
+    "#@..#....#....#",
+    "##..#.##.#.##.#",
+    "#...#....#....#",
+    "#.####.###.##.#",
+    "#...E....#....#",
+    "#.##.###.#.##.#",
+    "#H...E.......E#",
+    "#.####.###.##.#",
+    "#...........X.#",
+    "###############"
+  ]
+];
+
+const dungeonElement=document.getElementById("dungeon");
+const hpElement=document.getElementById("hp");
+const turnElement=document.getElementById("turn");
+const enemyCountElement=document.getElementById("enemy-count");
+const messageElement=document.getElementById("message");
+let map=[],player={x:1,y:1},enemies=[],exit={x:13,y:9},hp=3,turns=0,levelIndex=0,gameState="playing";
+
+function loadLevel(index){
+  map=LEVEL_MAPS[index].map(row=>row.split(""));
+  enemies=[];
+  player={x:1,y:1};
+  exit={x:13,y:9};
+
+  for(let y=0;y<map.length;y++){
+    for(let x=0;x<map[y].length;x++){
+      const tile=map[y][x];
+      if(tile==="@"){player={x,y};map[y][x]="."}
+      else if(tile==="E"){enemies.push({x,y});map[y][x]="."}
+      else if(tile==="X"){exit={x,y};map[y][x]="."}
+    }
+  }
+}
+
+function initGame(){
+  hp=3;
+  turns=0;
+  levelIndex=0;
+  gameState="playing";
+  loadLevel(levelIndex);
+  setMessage("冒險開始！共 3 層。踩到 H 治療泉水可回滿 HP，抵達 X 前往下一層。","");
+  render();
+}
+function setMessage(text,type){messageElement.textContent=text;messageElement.className=type||""}
+function inBounds(x,y){return y>=0&&y<map.length&&x>=0&&x<map[y].length}
+function isWall(x,y){return !inBounds(x,y)||map[y][x]==="#"}
+function enemyAt(x,y){return enemies.findIndex(enemy=>enemy.x===x&&enemy.y===y)}
+function render(){
+  // 主角 @ 使用 span 呈現，讓彩虹色動畫持續播放。
+  const htmlLines = map.map((row,y)=>row.map((tile,x)=>{
+    if(player.x===x&&player.y===y)return '<span class="player-glyph">@</span>';
+    if(exit.x===x&&exit.y===y)return "X";
+    if(enemyAt(x,y)!==-1)return "E";
+    return tile;
+  }).join("")).join("\n");
+  dungeonElement.innerHTML=htmlLines;
+  hpElement.textContent="♥ ".repeat(hp).trim()||"0";
+  turnElement.textContent=String(turns);
+  enemyCountElement.textContent=String(enemies.length);
+  document.getElementById("level").textContent=(levelIndex+1)+" / "+LEVEL_MAPS.length;
+}
+function distance(x1,y1,x2,y2){return Math.abs(x1-x2)+Math.abs(y1-y2)}
+function findEnemyStep(enemy){
+  const directions=[{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+  const queue=[{x:enemy.x,y:enemy.y,firstStep:null}];
+  const visited=new Set([enemy.x+","+enemy.y]);
+  let head=0;
+  while(head<queue.length){
+    const current=queue[head++];
+    if(current.x===player.x&&current.y===player.y)return current.firstStep;
+    for(const direction of directions){
+      const nx=current.x+direction.dx,ny=current.y+direction.dy,key=nx+","+ny;
+      if(visited.has(key)||isWall(nx,ny))continue;
+      const occupiedByEnemy=enemies.some(other=>other!==enemy&&other.x===nx&&other.y===ny);
+      if(occupiedByEnemy)continue;
+      const step=current.firstStep||{x:nx,y:ny};
+      visited.add(key);
+      queue.push({x:nx,y:ny,firstStep:step});
+    }
+  }
+  return null;
+}
+function moveEnemies(){
+  for(const enemy of enemies){
+    if(gameState!=="playing")return;
+    if(distance(enemy.x,enemy.y,player.x,player.y)===1){
+      hp--;
+      if(hp<=0){
+        hp=0;gameState="lost";
+        setMessage("你被地下城的敵人擊敗了！按「重新開始」再次挑戰。","error");
+        return;
+      }
+      setMessage("敵人攻擊了你！剩餘生命值："+hp+"。","error");
+      continue;
+    }
+    const next=findEnemyStep(enemy);
+    if(!next)continue;
+    if((next.x===player.x&&next.y===player.y)||(next.x===exit.x&&next.y===exit.y))continue;
+    enemy.x=next.x;enemy.y=next.y;
+  }
+}
+function movePlayer(dx,dy){
+  if(gameState!=="playing")return;
+  const nx=player.x+dx,ny=player.y+dy;
+  if(isWall(nx,ny)){setMessage("前方是牆壁，無法通過！","");render();return}
+  if(enemyAt(nx,ny)!==-1){setMessage("敵人擋住了去路！請繞道而行。","");render();return}
+
+  player.x=nx;
+  player.y=ny;
+  turns++;
+  let healed=false;
+
+  // 治療泉水：恢復至目前遊戲的最大生命值，使用後變成普通地板。
+  if(map[ny][nx]==="H"){
+    const oldHp=hp;
+    hp=3;
+    map[ny][nx]=".";
+    healed=true;
+    setMessage("你飲用了治療泉水！HP 從 "+oldHp+" 恢復至滿值 3。","success");
+  }
+
+  // 出口：前兩層進入下一層，第三層通關。
+  if(player.x===exit.x&&player.y===exit.y){
+    if(levelIndex<LEVEL_MAPS.length-1){
+      levelIndex++;
+      loadLevel(levelIndex);
+      setMessage("你進入了第 "+(levelIndex+1)+" 層！敵人更多、迷宮更危險，尋找 H 補充生命。","success");
+      render();
+      return;
+    }else{
+      gameState="won";
+      setMessage("恭喜！你成功通過全部 3 層地下城！總共用了 "+turns+" 個回合。","success");
+      render();
+      return;
+    }
+  }
+
+  moveEnemies();
+  if(gameState==="playing" && !healed){
+    setMessage("你前進了一步。小心敵人，繼續尋找出口 X。","");
+  }
+  render();
+}
+document.addEventListener("keydown",event=>{
+  const key=event.key.toLowerCase();
+  const keyMap={
+    "w":{dx:0,dy:-1},"arrowup":{dx:0,dy:-1},
+    "s":{dx:0,dy:1},"arrowdown":{dx:0,dy:1},
+    "a":{dx:-1,dy:0},"arrowleft":{dx:-1,dy:0},
+    "d":{dx:1,dy:0},"arrowright":{dx:1,dy:0}
+  };
+  const direction=keyMap[key];
+  if(direction){event.preventDefault();movePlayer(direction.dx,direction.dy)}
+});
+document.querySelectorAll(".direction").forEach(button=>{
+  button.addEventListener("click",()=>{
+    movePlayer(Number(button.dataset.dx),Number(button.dataset.dy));
+  });
+});
+document.getElementById("restart").addEventListener("click",initGame);
+initGame();
+</script>
+</body>
+</html>
